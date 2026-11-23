@@ -1,0 +1,53 @@
+# Runs the test suite (Actions tab on GitHub):
+#  - Linux, all supported Python versions: every push to main and every pull request
+#  - macOS and Windows: pull requests and manual runs (Actions > tests > Run workflow);
+#    the GUI tests run on the desktop of the runner
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux, Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install Tk and a virtual display (GUI tests)
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+      - run: pip install -r requirements.txt
+      - run: python -m pynet2plan doctor
+      - name: Tests (GUI included)
+        run: xvfb-run -a -s "-screen 0 1440x900x24" python -m pytest -q
+
+  macos-windows:
+    name: ${{ matrix.os }}, Python 3.14
+    runs-on: ${{ matrix.os }}
+    if: github.event_name != 'push'
+    continue-on-error: true          # informative
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pynet2plan doctor
+      - name: Tests (GUI included)
+        run: python -m pytest -q

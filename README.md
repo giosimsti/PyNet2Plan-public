@@ -1,0 +1,326 @@
+# PyNet2Plan
+
+PyNet2Plan is a small network planning tool written in Python for the laboratory of the course
+*Communication Network Design* at Politecnico di Milano. It is inspired by [Net2Plan](https://www.net2plan.com). A
+network is a `networkx.DiGraph` whose nodes are named locations and whose edges are
+unidirectional links; the traffic is a list of demands, read from a CSV file (demand list or
+N × N matrix) or generated from a random seed; each algorithm is a Python file in
+`formulations/`, with ILP models written in PuLP and heuristics written with NetworkX. The
+result of every run is stored as a folder of CSV files that can be opened again in the
+graphical interface.
+
+Link capacities and demands are expressed in wavelengths. Each link (one direction between two
+nodes) has a number of fibers, 1 by default, and a capacity of 40 wavelengths per fiber by
+default; a link with f fibers of W wavelengths offers f × W wavelengths, and with wavelength
+continuity each wavelength can be used once per fiber.
+
+![Results view: link occupancy and the routes of a demand](docs/screenshot_results.png)
+
+## Lab handouts
+
+The handouts of the laboratory are in [`docs/lab/`](docs/lab/README.md):
+[installation](docs/lab/00_installation.pdf) on macOS and Windows,
+[tour of the tool](docs/lab/01_tool_overview.pdf),
+[networks as NetworkX graphs](docs/lab/02_networkx_backend.pdf),
+[the splittable flow formulation](docs/lab/03_first_ilp.pdf) (Lab 1),
+[the unsplittable flow formulation](docs/lab/04_unsplittable_flow.pdf) and
+[the route formulation](docs/lab/05_route_formulation.pdf) (Lab 2),
+[the route formulation with 1+1 protection](docs/lab/06_protection_route_formulation.pdf) (Lab 3).
+This repository contains the complete material of Labs 1 to 3: handouts, exercises, scripts and
+data. The solutions of the exercises are not included.
+
+## 1. Installation
+
+PyNet2Plan requires Python 3.10 to 3.14; version 3.14 is recommended. Python 3.15 cannot be used
+yet, because some of the required packages are not available for it. The complete procedure for
+macOS and Windows is described in [`docs/lab/00_installation.pdf`](docs/lab/00_installation.pdf).
+In short:
+
+```bash
+git clone https://github.com/giosimsti/PyNet2Plan-public.git
+cd PyNet2Plan-public
+pip install -r requirements.txt   # preferably in a virtual environment, see handout 0
+python -m pynet2plan doctor        # checks Python, NetworkX, PuLP and the ILP solvers
+```
+
+A copy made earlier is updated from the project folder with
+
+```bash
+git pull
+```
+
+which adds the new files and keeps your work. If git refuses because of local changes, save your work in a commit first
+(`git add -A`, then `git commit -m "My work"`) and type `git pull --no-rebase --no-edit`. Once
+you have commits of your own, always use this form: a plain `git pull` stops with *Need to
+specify how to reconcile divergent branches*.
+
+The requirements are NetworkX, Matplotlib and PuLP with the CBC and HiGHS solvers; the first
+solver that works is used. Tkinter is part of the Python installers for Windows and macOS; on
+Linux it is installed with `sudo apt install python3-tk`. The command `pip install -e .` also
+installs a `pynet2plan` command that can be used from any folder.
+
+## 2. Starting the program
+
+```bash
+python -m pynet2plan               # graphical interface (also: python main.py)
+python -m pynet2plan --help        # command line
+python -m pytest                  # tests
+```
+
+## 3. Working with the graphical interface
+
+The menu *File > Open example* opens one of the reference networks together with its traffic
+matrix. A typical session consists of the following steps.
+
+1. Network. A topology is opened with *File > Open topology...* (`data/topologies/*.json`,
+   GraphML or Net2Plan `.n2p` files), or built with the modes *Add node* and *Add link*, with
+   *File > Add cities...* or with *File > Random topology...*. Failures are simulated by
+   selecting a node or a link and pressing *Fail / repair selected*.
+2. Traffic. A matrix is opened with *Traffic > Open traffic matrix...* (`data/traffic/*.csv`)
+   or generated with *Traffic > Generate random traffic...*. The same seed on the same topology
+   gives the same matrix on every computer, and the seed is stored in the saved file.
+3. Run. An algorithm is selected at the bottom of the window, its parameters are set with
+   *Parameters...*, and *Run* (F5) solves it in the background; *Cancel* stops the computation.
+   The solution is checked independently of the algorithm (flow conservation, capacities,
+   splitting, wavelengths) and saved as CSV files in a new folder of `results/`.
+4. Results. The *Results* tab opens a saved run (*Open results folder...*, *Browse...*,
+   *Latest*). The map is coloured by link utilization, and selecting links, routes or demands
+   highlights the corresponding paths. The tabs *Report*, *Links*, *Routes*, *Demands*,
+   *Occupancy*, *Wavelengths* (formulations with wavelength continuity), *Validation* and
+   *Fibre cuts* describe the run. *Fibre cuts* lists, for every single fibre cut after
+   planning, the demands that go down; a cut can also be applied from the *Links* tab, to see
+   which demands are lost without protection and which switch to their backup path with 1+1
+   protection.
+5. Comparison. *Compare (sweep)...* runs several algorithms for several link capacities and
+   parameter values (for example `k=1,2,3`), saves all runs in one folder and plots the
+   objective and the computation time as functions of the capacity. Each run is repeated
+   (*Repetitions*, 5 by default) and the time is shown as the mean with error bars of one
+   standard deviation.
+
+The buttons *Open as PDF* below the map and the charts save them as vector PDF files (in the
+folder of the run) and open them in the default PDF viewer, for use in reports; *Save as...*
+saves them where you choose, as PDF, PNG or SVG files. *View > Text
+size* enlarges all texts, which is useful on a projector. Further screenshots:
+[network and traffic](docs/screenshot_network.png),
+[wavelength assignment](docs/screenshot_wavelengths.png), [sweep charts](docs/screenshot_sweep.png).
+
+## 4. Algorithms
+
+| file | description | status |
+|---|---|---|
+| `splittable_flow.py` | link-flow ILP, demands may be split (Lab 1) | complete |
+| `unsplittable_flow.py` | link-flow ILP, one path per demand (Lab 2) | exercise |
+| `route_formulation_vwp.py` | route (path) ILP without wavelength continuity (Lab 2) | exercise |
+| `greedy_no_protection.py` | greedy heuristic: k shortest paths, first-fit wavelengths, no protection (Lab 3) | complete |
+| `greedy_1plus1_protection.py` | greedy heuristic with 1+1 protection: shortest working path, shortest fibre-disjoint backup (Lab 3) | complete |
+| `protection_route_formulation.py` | route ILP with 1+1 dedicated protection and wavelength continuity (Lab 3) | exercise |
+| `_template.py` | starting point for new algorithms (not listed in the interface) | |
+
+Each exercise contains numbered lines of the form `raise NotCompletedError("TODO n: ...")`,
+which are replaced by the missing code. The file is read again at every run, so the interface
+does not need to be restarted. The *Check* button runs the selected file on a small test
+network designed to reveal common mistakes, such as a missing capacity constraint, a demand
+split although splitting is not allowed, or two lightpaths on the same wavelength. Errors are
+reported in a dialog with the corresponding status:
+
+| status | meaning |
+|---|---|
+| `OPTIMAL`, `FEASIBLE` | valid solution, proved optimal or not (heuristic, time limit) |
+| `BLOCKING` | valid solution in which part of the traffic is not routed (heuristics) |
+| `NOT_COMPLETED` | a TODO is still present; the message gives file and line |
+| `ERROR` | syntax error, exception or wrong return value; file, line and traceback are given |
+| `INFEASIBLE`, `UNBOUNDED`, `TIME_LIMIT` | answer of the ILP solver (an unbounded model usually lacks a constraint) |
+| `INVALID` | the model was solved but its solution violates a constraint, e.g. *Link Madrid->Zaragoza carries 46 wavelengths but its capacity is 40* |
+
+The same checks are available without the interface:
+
+```bash
+python -m pynet2plan check formulations/splittable_flow.py     # small test network
+python -m pytest tests/test_exercises.py -v                     # checks of the exercises
+```
+
+The tests of an exercise are skipped while it still contains TODOs. Once it is complete they
+compare its results with known optimal values and with the complete formulations (for example,
+the unsplittable optimum cannot be smaller than the splittable one). The interface that an
+algorithm must implement is described in [`formulations/README.md`](formulations/README.md).
+
+### Example: splittable and unsplittable flow
+
+With the original traffic of Spain-7 the splittable and unsplittable formulations often reach
+the same optimum. The matrix `data/traffic/spain7_traffic_split_vs_unsplit.csv` (24 demands of
+4 to 16 wavelengths, 229 in total) was chosen so that the two differ: the unsplittable model
+cannot fill the scarce links exactly, so it needs more wavelengths, or has no solution, for
+most capacities between 34 and 56.
+
+![Splittable and unsplittable flow on Spain-7 for uniform capacities from 32 to 60](docs/example_split_vs_unsplit.png)
+
+| uniform capacity C | splittable | unsplittable |
+|---|---:|---:|
+| up to 33 | infeasible | infeasible |
+| 34 | 431 | infeasible |
+| 35 | 430 | 460 |
+| 36 to 40 | 429 to 425 | 443 |
+| 42, 44 to 56 | 423, 421 to 409 | 424, 422 |
+| 57 and above | 408 | 408 |
+
+The objective is the total number of wavelengths used on all links; for C = 41 and C = 43 the
+two formulations give the same value. The comparison can be repeated in the interface (*File >
+Open example > Spain-7: splittable vs unsplittable*, then *Compare (sweep)...* with
+`splittable_flow` and `unsplittable_flow` and capacities `32-60:2`) or from the command line:
+
+```bash
+python labs/lab1_comparison.py
+python -m pynet2plan sweep -t data/topologies/spain7.json \
+       -d data/traffic/spain7_traffic_split_vs_unsplit.csv \
+       -a splittable_flow -a unsplittable_flow -c 32-60:2
+```
+
+The unsplittable series appears once `formulations/unsplittable_flow.py` has been completed;
+before that its runs have status `NOT_COMPLETED`.
+
+## 5. File formats
+
+A topology file (`.json`) lists the nodes and the unidirectional links:
+
+```json
+{"name": "Spain-7",
+ "nodes": [{"name": "Madrid", "lat": 40.4168, "lon": -3.7038}, ...],
+ "links": [{"origin": "Madrid", "destination": "Zaragoza", "capacity": 40, "length": 274.1}, ...]}
+```
+
+The field `capacity` is the number of wavelengths of each fiber. The optional field `fibers`
+(for example `"fibers": 2`) gives the number of fibers of the link and is 1 when omitted.
+Parallel links found in GraphML, Net2Plan or older PyNet2Plan files become fibers of a single
+link.
+
+A traffic file (`.csv`) is either a list of demands or an N × N matrix; the format is detected
+automatically. The separator may be a comma, a semicolon or a tab, and lines starting with `#`
+are comments:
+
+```
+id,origin,destination,traffic          ,Madrid,Barcelona,Valencia
+0,Madrid,Barcelona,3                   Madrid,0,3,1
+1,Barcelona,Madrid,2                   Barcelona,2,0,4
+                                       Valencia,1,1,0
+```
+
+Each run is saved in its own folder of `results/`:
+
+| file | content |
+|---|---|
+| `summary.csv` | algorithm, parameters, status, objective, time, solver, carried and blocked traffic, utilization (one row) |
+| `links.csv` | fibers, wavelengths per fiber, capacity (fibers × wavelengths per fiber), used and free wavelengths, utilization and number of demands of each link |
+| `routes.csv` | demand, path and wavelengths of each route, with the wavelength indices when assigned |
+| `demands.csv` | offered, carried and blocked wavelengths and state of each demand |
+| `wavelengths.csv` | demand using each wavelength of each link (formulations with wavelength continuity) |
+| `validation.csv`, `report.txt` | result of the independent check, text report |
+| `topology.json`, `traffic.csv`, `formulation.py` | copies of the inputs and of the algorithm |
+
+A folder is written whenever the algorithm returns a solution, including an invalid one, so
+that the error can be examined. A sweep folder contains `sweep_summary.csv`, with one row per
+run including the failed ones, and the run folders in `runs/`. The CSV files can be read with
+Excel or pandas, e.g. `pd.read_csv("results/<run>/links.csv")`.
+
+## 6. Data
+
+The folder `data/topologies/` contains the reference networks `spain7` (7 nodes, 16 links),
+`nsfnet14` (14 nodes, 42 links), `cost239` (11 nodes, 52 links), `italy10` (10 nodes, 30 links)
+and `example_cities`, each with a traffic matrix in `data/traffic/`
+(`italy10_traffic_matrix.csv` shows the N × N format). The matrix
+`spain7_traffic_split_vs_unsplit.csv` is described in the example above and in
+`data/README.md`. The examples of Lab 3 use `spain7_protection.csv` on Spain-7 and the
+variants `spain7_tight` and `italy10_tight`, with fewer wavelengths per link, together with
+their traffic (*File > Open example*). The folder `data/topologies/real/` contains 105 real topologies (GEANT,
+ABILENE, CORONET, GERMANY50, ITALY and others, see `INDEX.md`), with synthetic traffic in
+`data/traffic/real/`. They come from the Topology Bench dataset (R. Matzner et al., *Journal of
+Optical Communications and Networking*, vol. 17, no. 1, pp. 7-27, 2024,
+[doi:10.1364/JOCN.534477](https://doi.org/10.1364/JOCN.534477)), distributed under the
+CC BY 4.0 license; `data/README.md` gives the full reference and the changes made.
+
+## 7. Command line and scripts
+
+```bash
+python -m pynet2plan run   -t data/topologies/spain7.json -d data/traffic/spain7_traffic.csv \
+                          -a splittable_flow -p time_limit=30 --plot
+python -m pynet2plan sweep -t data/topologies/spain7.json -d data/traffic/spain7_traffic.csv \
+                          -a splittable_flow -c 20-40:5 -r 5
+python -m pynet2plan traffic -t data/topologies/nsfnet14.json -n 30 --seed 7 -o my_traffic.csv
+python -m pynet2plan report results/<folder>      # report of a run
+python -m pynet2plan list                         # available algorithms and remaining TODOs
+python labs/lab1_networkx_tour.py                # lab 1, NetworkX (handout 2)
+python labs/lab1_exercises.py                    # lab 1, exercises on NetworkX (handout 2)
+                                                 # (also as a notebook for Jupyter and Google Colab:
+                                                 #  labs/lab1_exercises.ipynb)
+python labs/lab1_first_ilp.py                    # lab 1, splittable flow formulation (handout 3)
+```
+
+Lab 2:
+
+```bash
+python labs/lab2_unsplittable.py                 # unsplittable vs splittable (handout 4)
+python labs/lab2_route_formulation.py            # route vs flow formulation (handout 5)
+python labs/lab1_comparison.py                   # splittable/unsplittable and route/flow comparisons
+python -m pynet2plan sweep -t data/topologies/spain7.json -d data/traffic/spain7_traffic.csv \
+                          -a splittable_flow -a "route_formulation_vwp:k=1,2,3" -c 20-40:5 -r 5
+```
+
+Lab 3:
+
+```bash
+python -m pynet2plan run -t data/topologies/spain7.json -d data/traffic/spain7_protection.csv \
+                          -a greedy_no_protection
+python -m pynet2plan run -t data/topologies/spain7.json -d data/traffic/spain7_protection.csv \
+                          -a greedy_1plus1_protection
+```
+
+The library can also be used from Python or Jupyter:
+
+```python
+from pynet2plan import network, traffic, runner, results
+
+G = network.load_topology("data/topologies/spain7.json")        # a networkx.DiGraph
+demands = traffic.load_traffic("data/traffic/spain7_traffic.csv", G)
+res = runner.run_algorithm(G, demands, "splittable_flow", {"time_limit": 60})
+print(res.status, res.summary["objective"], res.folder)
+run = results.load_run(res.folder)                                # the saved CSV files
+```
+
+## 8. Project layout
+
+```
+pynet2plan/        the library (network, traffic, solution, validation, runner, results, gui, ...)
+formulations/     the algorithms: complete formulations and exercises
+data/             topologies and traffic matrices
+labs/             scripts used in the lab sessions
+results/          output of the runs (not under version control)
+tests/            tests, run with python -m pytest
+tools/            maintenance scripts (reference data, handouts)
+docs/             lab handouts (docs/lab), screenshots, example charts
+```
+
+## 9. Credits
+
+PyNet2Plan was developed for the laboratory of the course *Communication Network Design* at
+Politecnico di Milano (BONSAI Lab) by
+
+* Giovanni Simone Sticca
+* Hao Zhou (Lab 3: 1+1 protection)
+* Memedhe Ibrahimi
+
+The real topologies of `data/topologies/real/` come from the Topology Bench dataset (see
+section 6 and `data/README.md`). PyNet2Plan is inspired by
+[Net2Plan](https://www.net2plan.com).
+
+## 10. License
+
+* The code (`pynet2plan/`, `formulations/`, `labs/`, `tests/`, `tools/`, `main.py`) is released
+  under the [MIT license](LICENSE).
+* The lab material (the handouts in `docs/lab/`, with their sources, screenshots and figures,
+  the other files of `docs/`) and the data files of `data/` are released under the
+  [Creative Commons Attribution 4.0 International license](LICENSE-docs.md) (CC BY 4.0).
+* The topologies of `data/topologies/real/` and the files of `data/real_topologies_xlsx/` are
+  part of the Topology Bench dataset, also distributed under CC BY 4.0: if you use them, cite
+  the paper given in `data/README.md`.
+
+You may use, adapt and redistribute the lab material, for example in your own course, as long
+as you credit the authors and link to this repository.
